@@ -28,6 +28,40 @@ const state = {
   purchases: [],
 };
 
+function withCommas(value) {
+  const raw = String(value ?? "").replace(/[^0-9.\-]/g, "");
+  if (!raw) return "";
+  const negative = raw.startsWith("-");
+  const body = raw.replace(/-/g, "");
+  const dot = body.indexOf(".");
+  const whole = (dot >= 0 ? body.slice(0, dot) : body).replace(/^0+(?=\d)/, "");
+  const decimals = dot >= 0 ? "." + body.slice(dot + 1).replace(/\./g, "") : "";
+  return (negative ? "-" : "") + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + decimals;
+}
+
+function formatNumberInput(input) {
+  const old = input.value;
+  const next = withCommas(old);
+  if (next === old) return;
+  const caret = input.selectionStart ?? old.length;
+  const keep = old.slice(0, caret).replace(/[^0-9.\-]/g, "").length;
+  input.value = next;
+  let pos = 0;
+  let seen = 0;
+  while (pos < next.length && seen < keep) {
+    if (/[0-9.\-]/.test(next[pos])) seen += 1;
+    pos += 1;
+  }
+  if (document.activeElement === input) input.setSelectionRange(pos, pos);
+}
+
+function formatAllNumbers() {
+  for (const input of form.querySelectorAll('input[inputmode="decimal"]')) {
+    const next = withCommas(input.value);
+    if (next !== input.value) input.value = next;
+  }
+}
+
 function blankPurchase() {
   return { date: "", btc: "", cost: "", sold: "", note: "" };
 }
@@ -50,9 +84,9 @@ function renderParcelRows() {
     parcelRows.innerHTML = state.purchases.map((row, i) => `<tr data-index="${i}">
       <td class="num">${i + 1}</td>
       <td><input type="date" data-field="date" value="${esc(row.date)}" aria-label="Purchase ${i + 1} date bought"></td>
-      <td><input data-field="btc" inputmode="decimal" placeholder="0.00" value="${esc(row.btc)}" aria-label="Purchase ${i + 1} bitcoin bought"></td>
-      <td><input data-field="cost" inputmode="decimal" placeholder="$0.00" value="${esc(row.cost)}" aria-label="Purchase ${i + 1} total cost in AUD"></td>
-      <td><input data-field="sold" inputmode="decimal" placeholder="0" value="${esc(row.sold)}" aria-label="Purchase ${i + 1} bitcoin already sold"></td>
+      <td><input data-field="btc" inputmode="decimal" placeholder="0.00" value="${esc(withCommas(row.btc))}" aria-label="Purchase ${i + 1} bitcoin bought"></td>
+      <td><input data-field="cost" inputmode="decimal" placeholder="$0.00" value="${esc(withCommas(row.cost))}" aria-label="Purchase ${i + 1} total cost in AUD"></td>
+      <td><input data-field="sold" inputmode="decimal" placeholder="0" value="${esc(withCommas(row.sold))}" aria-label="Purchase ${i + 1} bitcoin already sold"></td>
       <td><input data-field="note" maxlength="60" placeholder="Exchange" value="${esc(row.note)}" aria-label="Purchase ${i + 1} note"></td>
       <td><button type="button" class="remove" data-remove="${i}" aria-label="Remove purchase ${i + 1}" title="Remove">×</button></td>
     </tr>`).join("");
@@ -547,6 +581,7 @@ function applyData(data) {
       field.value = value;
     }
   }
+  formatAllNumbers();
   return true;
 }
 
@@ -603,6 +638,7 @@ function loadExample() {
     setChecked("priceChoice", "custom");
     form.elements.customPrice.value = "100000";
   }
+  formatAllNumbers();
   syncVisibility();
   save();
   calculateNow();
@@ -837,6 +873,11 @@ function registerApp() {
 }
 
 form.addEventListener("submit", (event) => event.preventDefault());
+form.addEventListener("input", (event) => {
+  if (event.target.matches && event.target.matches('input[inputmode="decimal"]')) {
+    formatNumberInput(event.target);
+  }
+}, true);
 form.addEventListener("input", () => {
   syncVisibility();
   save();
