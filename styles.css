@@ -229,7 +229,74 @@ select.control {
   min-height: 1.2em;
 }
 
-.text-actions { display: flex; gap: 10px; margin: 4px 0 18px; }
+.text-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 18px; }
+.save-card .text-actions { margin-bottom: 8px; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.parcel-table-wrap { overflow-x: auto; margin: 0 0 12px; }
+.parcel-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; min-width: 440px; }
+.parcel-table th:nth-child(1) { width: 22px; }
+.parcel-table th:nth-child(2) { width: 30%; }
+.parcel-table th:nth-child(7) { width: 30px; }
+.parcel-table th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.parcel-table th {
+  text-align: left;
+  font-weight: 650;
+  color: var(--muted);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.parcel-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.parcel-table td.num { color: var(--muted); width: 24px; }
+.parcel-table input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 8px;
+  background: #0e1218;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  outline: none;
+}
+.parcel-table input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(247, 147, 26, 0.2); }
+.parcel-table input[type="date"] { padding: 0 4px; font-size: 12px; }
+.parcel-table td { padding: 6px 2px; }
+.parcel-table input { padding: 0 6px; }
+.parcel-table .remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.parcel-table .remove:hover { color: var(--red); background: rgba(255, 139, 139, 0.1); }
+.parcel-table tr.empty td { color: var(--muted); padding: 14px 4px; }
+.parcel-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+
+.lots { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.lots th, .lots td { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.lots th:first-child, .lots td:first-child { text-align: left; }
+.lots thead th { color: var(--muted); font-weight: 650; }
+.lots small { display: block; color: var(--muted); }
+.tag {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.tag.yes { background: rgba(61, 214, 140, 0.15); color: var(--green); }
+.tag.no { background: rgba(255, 184, 77, 0.12); color: var(--amber); }
 .text-actions button { background: transparent; }
 
 .results {

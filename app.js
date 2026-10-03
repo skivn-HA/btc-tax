@@ -15,12 +15,78 @@ const salePreview = document.getElementById("salePreview");
 const holdingReadout = document.getElementById("holdingReadout");
 const ratesBody = document.getElementById("ratesBody");
 
+const parcelRows = document.getElementById("parcelRows");
+const parcelSummary = document.getElementById("parcelSummary");
+const saveStatus = document.getElementById("saveStatus");
+const FILE_APP = "au-btc-tax-calculator";
+
 const state = {
   price: null,
   priceError: "",
   deferredPrompt: null,
   loadingPrice: false,
+  purchases: [],
 };
+
+function blankPurchase() {
+  return { date: "", btc: "", cost: "", sold: "", note: "" };
+}
+
+function cleanPurchases(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((row) => ({
+    date: String((row && row.date) || ""),
+    btc: String((row && row.btc) ?? ""),
+    cost: String((row && row.cost) ?? ""),
+    sold: String((row && row.sold) ?? ""),
+    note: String((row && row.note) || ""),
+  }));
+}
+
+function renderParcelRows() {
+  if (!state.purchases.length) {
+    parcelRows.innerHTML = `<tr class="empty"><td colspan="7">No purchases yet. Click <strong>Add purchase</strong> for each time you bought bitcoin.</td></tr>`;
+  } else {
+    parcelRows.innerHTML = state.purchases.map((row, i) => `<tr data-index="${i}">
+      <td class="num">${i + 1}</td>
+      <td><input type="date" data-field="date" value="${esc(row.date)}" aria-label="Purchase ${i + 1} date bought"></td>
+      <td><input data-field="btc" inputmode="decimal" placeholder="0.00" value="${esc(row.btc)}" aria-label="Purchase ${i + 1} bitcoin bought"></td>
+      <td><input data-field="cost" inputmode="decimal" placeholder="$0.00" value="${esc(row.cost)}" aria-label="Purchase ${i + 1} total cost in AUD"></td>
+      <td><input data-field="sold" inputmode="decimal" placeholder="0" value="${esc(row.sold)}" aria-label="Purchase ${i + 1} bitcoin already sold"></td>
+      <td><input data-field="note" maxlength="60" placeholder="Exchange" value="${esc(row.note)}" aria-label="Purchase ${i + 1} note"></td>
+      <td><button type="button" class="remove" data-remove="${i}" aria-label="Remove purchase ${i + 1}" title="Remove">×</button></td>
+    </tr>`).join("");
+  }
+  updateParcelSummary();
+}
+
+function updateParcelSummary() {
+  const toNum = (v) => {
+    const n = parseFloat(String(v || "").replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  let bought = 0;
+  let sold = 0;
+  let cost = 0;
+  let count = 0;
+  for (const row of state.purchases) {
+    const b = toNum(row.btc);
+    if (!b) continue;
+    count += 1;
+    bought += b;
+    sold += Math.min(b, toNum(row.sold));
+    cost += toNum(row.cost);
+  }
+  if (!count) {
+    parcelSummary.textContent = "";
+    return;
+  }
+  const held = Math.max(0, bought - sold);
+  parcelSummary.textContent =
+    count + (count === 1 ? " purchase" : " purchases") + " · " +
+    formatBTC(bought) + " bought for " + BtcTax.formatAUD(cost) + " · " +
+    formatBTC(held) + " still held.";
+}
 
 function esc(value) {
   return String(value).replace(/[&<>"']/g, (ch) => ({
@@ -90,8 +156,10 @@ function readInput() {
     btc: fieldValue("btc"),
     priceAud: priceChoice === "custom" ? fieldValue("customPrice") : market,
     priceIsCustom: priceChoice === "custom",
-    sellFees: fieldValue("profitChoice") === "cost" ? fieldValue("sellFees") : 0,
+    sellFees: fieldValue("profitChoice") !== "profit" ? fieldValue("sellFees") : 0,
     profitMode: fieldValue("profitChoice"),
+    purchases: state.purchases,
+    method: fieldValue("method"),
     costBase: fieldValue("costBase"),
     knownProfit: fieldValue("knownProfit"),
     holding: fieldValue("holding"),
@@ -111,8 +179,14 @@ function readInput() {
 
 function syncVisibility() {
   document.getElementById("customPriceWrap").hidden = fieldValue("priceChoice") !== "custom";
-  document.getElementById("costFields").hidden = fieldValue("profitChoice") !== "cost";
-  document.getElementById("profitFields").hidden = fieldValue("profitChoice") !== "profit";
+  const mode = fieldValue("profitChoice");
+  document.getElementById("feeFields").hidden = mode === "profit";
+  document.getElementById("costBaseWrap").hidden = mode !== "cost";
+  document.getElementById("parcelFields").hidden = mode !== "parcels";
+  document.getElementById("profitFields").hidden = mode !== "profit";
+  document.getElementById("holdingChoice").hidden = mode === "parcels";
+  document.getElementById("acquiredWrap").hidden = mode === "parcels";
+  document.getElementById("parcelHoldingHint").hidden = mode !== "parcels";
   document.getElementById("familyFields").hidden = !fieldValue("family");
   document.getElementById("helpFields").hidden = !fieldValue("hasHelp");
 }
@@ -177,28 +251,69 @@ function renderSale(result) {
   if (result.price > 0) add("Sale price used", esc(BtcTax.formatAUD(result.price)));
   if (result.btc > 0 && result.price > 0) add("Sale proceeds", esc(BtcTax.formatAUD(result.proceeds)));
   if (result.sellFees > 0) add("Selling costs", esc(BtcTax.formatAUD(result.sellFees)));
-  if (result.costBase != null && (result.profitMode === "cost" || result.btc > 0)) {
-    add("Cost base", esc(BtcTax.formatAUD(result.costBase)));
+  if (result.costBase != null && (result.profitMode !== "profit" || result.btc > 0)) {
+    add(result.profitMode === "parcels" ? "Cost base from purchases" : "Cost base", esc(BtcTax.formatAUD(result.costBase)));
   }
+  if (result.profitMode === "parcels") add("Bitcoin matched", esc(result.methodLabel));
   add("Capital profit", esc(BtcTax.formatAUD(result.grossGain)));
   if (result.lossesUsed > 0) add("Capital losses used", esc(BtcTax.formatAUD(result.lossesUsed)));
   add("Length of time held", esc(result.holdingLabel));
-  add("CGT discount", result.discountApplies ? esc(BtcTax.formatAUD(result.discountAmount)) + " off (50%)" : "None");
+  const discountText = result.partialDiscount
+    ? esc(BtcTax.formatAUD(result.discountAmount)) + " off (50% of the part held 12 months or more)"
+    : result.discountApplies
+      ? esc(BtcTax.formatAUD(result.discountAmount)) + " off (50%)"
+      : "None";
+  add("CGT discount", discountText);
   add("Profit that is taxable", esc(BtcTax.formatAUD(result.netCapitalGain)), true);
   if (result.lossCarryForward > 0) add("Loss still to carry forward", esc(BtcTax.formatAUD(result.lossCarryForward)));
   return `<h3>How the profit is taxed</h3><dl class="breakdown">${rows.join("")}</dl>`;
 }
 
+function prettyDate(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
+  if (!match) return "";
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    .toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function renderLots(result) {
+  if (!result.lots || !result.lots.length || result.needsBitcoin || result.needsPrice) return "";
+  const rows = result.lots.map((lot) => {
+    const title = lot.unmatched
+      ? "No matching purchase"
+      : "#" + lot.row + " · " + prettyDate(lot.date);
+    const sub = lot.unmatched ? "Treated as a $0 cost base" : [lot.note, "Held " + lot.heldLabel].filter(Boolean).join(" · ");
+    let tag;
+    if (!result.resident) tag = `<span class="tag no">No discount</span>`;
+    else if (lot.eligible) tag = `<span class="tag yes">50% discount</span>`;
+    else if (lot.discountFromPretty) tag = `<span class="tag no">Discount from ${esc(lot.discountFromPretty)}</span>`;
+    else tag = `<span class="tag no">No discount</span>`;
+    return `<tr>
+      <td>${esc(title)}<small>${esc(sub)}</small>${tag}</td>
+      <td>${esc(formatBTC(lot.btc))}</td>
+      <td>${esc(BtcTax.formatAUD(lot.cost))}</td>
+      <td>${esc(BtcTax.formatAUD(lot.proceeds))}</td>
+      <td>${esc(BtcTax.formatAUD(lot.gain))}</td>
+    </tr>`;
+  }).join("");
+  return `<h3>Purchases used for this sale</h3>
+    <table class="lots">
+      <thead><tr><th>Purchase</th><th>Bitcoin</th><th>Cost base</th><th>Proceeds</th><th>Gain</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderWait(result) {
   if (!(result.discountSaving > 1)) return "";
-  const when = result.dates && !result.dates.invalid && !result.dates.qualifies && result.dates.discountFromPretty
-    ? " A sale on or after " + result.dates.discountFromPretty + " would qualify."
+  const when = result.waitUntilPretty
+    ? " A sale on or after " + result.waitUntilPretty + " would qualify" + (result.profitMode === "parcels" ? " for all of these purchases." : ".")
     : "";
   let help = "";
   if (result.discountSavingHelp > 1) {
     help = " The extra study-loan repayment would also be " + BtcTax.formatAUD(result.discountSavingHelp) + " lower.";
   }
-  return `<div class="callout"><strong>If the 50% discount applied.</strong> Tax on this same profit would be ${esc(BtcTax.formatAUD(result.taxIfDiscounted))} instead, which is ${esc(BtcTax.formatAUD(result.discountSaving))} less.${esc(when + help)}</div>`;
+  const lead = result.partialDiscount ? "If all of it got the 50% discount." : "If the 50% discount applied.";
+  return `<div class="callout"><strong>${lead}</strong> Tax on this same profit would be ${esc(BtcTax.formatAUD(result.taxIfDiscounted))} instead, which is ${esc(BtcTax.formatAUD(result.discountSaving))} less.${esc(when + help)}</div>`;
 }
 
 function renderTable(result) {
@@ -267,6 +382,7 @@ function render(result) {
     renderLists(result),
     renderSetAside(result),
     renderSale(result),
+    renderLots(result),
     renderWait(result),
     renderTable(result),
     renderSlices(result),
@@ -287,7 +403,11 @@ function updateReadouts(result) {
     salePreview.textContent = "";
   }
 
-  if (result.dates && result.dates.invalid) {
+  if (result.profitMode === "parcels") {
+    holdingReadout.textContent = result.lots && result.lots.length
+      ? "Bitcoin in this sale: " + result.holdingLabel.charAt(0).toLowerCase() + result.holdingLabel.slice(1) + "."
+      : "Enter the sale date. If it is left blank, today is used.";
+  } else if (result.dates && result.dates.invalid) {
     holdingReadout.textContent = "The sale date needs to be after the acquisition date.";
   } else if (result.dates && !result.dates.invalid) {
     const discount = result.dates.qualifies
@@ -347,8 +467,16 @@ function summaryText(input, result) {
   if (result.price > 0) lines.push("Sale price: " + BtcTax.formatAUD(result.price));
   if (result.btc > 0) lines.push("Bitcoin sold: " + formatBTC(result.btc));
   if (result.proceeds) lines.push("Sale proceeds: " + BtcTax.formatAUD(result.proceeds));
+  if (result.profitMode !== "profit") lines.push("Cost base: " + BtcTax.formatAUD(result.costBase));
+  if (result.lots && result.lots.length) {
+    lines.push("Purchases used (" + result.methodLabel.toLowerCase() + "):");
+    for (const lot of result.lots) {
+      const label = lot.unmatched ? "No matching purchase" : "#" + lot.row + " " + prettyDate(lot.date);
+      lines.push("  " + label + ": " + formatBTC(lot.btc) + ", cost " + BtcTax.formatAUD(lot.cost) + ", gain " + BtcTax.formatAUD(lot.gain) + (lot.eligible ? ", 50% discount" : ""));
+    }
+  }
   lines.push("Capital profit: " + BtcTax.formatAUD(result.grossGain));
-  lines.push("CGT discount: " + (result.discountApplies ? "50%" : "none"));
+  lines.push("CGT discount: " + (result.discountApplies ? BtcTax.formatAUD(result.discountAmount) : "none"));
   lines.push("Profit that is taxable: " + BtcTax.formatAUD(result.netCapitalGain));
   lines.push("Tax payable on this sale: " + BtcTax.formatAUD(result.extra.tax));
   lines.push("  Income tax: " + BtcTax.formatAUD(result.extra.incomeTax));
@@ -376,7 +504,7 @@ function calculateNow() {
   return { input, result };
 }
 
-function save() {
+function collectData() {
   const data = {};
   for (const field of form.elements) {
     if (!field.name) continue;
@@ -388,7 +516,12 @@ function save() {
       data[field.name] = field.value;
     }
   }
-  localStorage.setItem(STORAGE, JSON.stringify(data));
+  data.purchases = cleanPurchases(state.purchases);
+  return data;
+}
+
+function save() {
+  localStorage.setItem(STORAGE, JSON.stringify(collectData()));
 }
 
 function restore() {
@@ -396,7 +529,14 @@ function restore() {
   if (!raw) return false;
   let data;
   try { data = JSON.parse(raw); } catch (error) { return false; }
+  applyData(data);
+  return true;
+}
+
+function applyData(data) {
+  state.purchases = cleanPurchases(data.purchases);
   for (const [key, value] of Object.entries(data)) {
+    if (key === "purchases") continue;
     const field = form.elements[key];
     if (!field) continue;
     if ((typeof RadioNodeList !== "undefined" && field instanceof RadioNodeList) || (field.length && field[0] && field[0].type === "radio")) {
@@ -416,8 +556,22 @@ function setChecked(name, value) {
   for (const radio of field) radio.checked = radio.value === value;
 }
 
+function monthsAgoISO(months) {
+  const now = new Date();
+  now.setMonth(now.getMonth() - months);
+  const z = (n) => String(n).padStart(2, "0");
+  return now.getFullYear() + "-" + z(now.getMonth() + 1) + "-" + z(now.getDate());
+}
+
 function loadExample() {
   const acquired = yearsAgoISO(2);
+  state.purchases = [
+    { date: monthsAgoISO(40), btc: "0.08", cost: "3200", sold: "", note: "First buy" },
+    { date: monthsAgoISO(15), btc: "0.05", cost: "6500", sold: "", note: "" },
+    { date: monthsAgoISO(3), btc: "0.04", cost: "6800", sold: "", note: "This year" },
+  ];
+  form.elements.method.value = "fifo";
+  renderParcelRows();
   form.elements.name.value = "Alex";
   form.elements.year.value = "2026-27";
   form.elements.residency.value = "resident";
@@ -441,7 +595,7 @@ function loadExample() {
   form.elements.family.checked = false;
   form.elements.hasHelp.checked = false;
   setChecked("holding", "over12");
-  setChecked("profitChoice", "cost");
+  setChecked("profitChoice", "parcels");
   if (state.price) {
     setChecked("priceChoice", "live");
     form.elements.customPrice.value = "";
@@ -457,10 +611,99 @@ function loadExample() {
 function resetForm() {
   form.reset();
   localStorage.removeItem(STORAGE);
+  state.purchases = [];
+  renderParcelRows();
   form.elements.disposed.value = todayISO();
   syncVisibility();
   save();
   calculateNow();
+}
+
+function fileName() {
+  const name = String(fieldValue("name") || "").trim().replace(/[\\/:*?"<>|]+/g, "").slice(0, 40);
+  return "Bitcoin tax" + (name ? " - " + name : "") + " - " + todayISO() + ".json";
+}
+
+function showSaveStatus(text) {
+  saveStatus.textContent = text;
+}
+
+async function saveToFile() {
+  const payload = {
+    app: FILE_APP,
+    version: 1,
+    savedAt: new Date().toISOString(),
+    data: collectData(),
+  };
+  const text = JSON.stringify(payload, null, 2);
+  const suggestedName = fileName();
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description: "Bitcoin tax calculator file", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      showSaveStatus("Saved as " + handle.name + ".");
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = suggestedName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showSaveStatus("Saved as " + suggestedName + " in your Downloads folder.");
+}
+
+function loadFileText(text, name) {
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    showSaveStatus(name + " is not a saved calculator file.");
+    return;
+  }
+  const data = payload && payload.app === FILE_APP ? payload.data : null;
+  if (!data || typeof data !== "object") {
+    showSaveStatus(name + " is not a saved calculator file.");
+    return;
+  }
+  form.reset();
+  applyData(data);
+  if (!form.elements.disposed.value) form.elements.disposed.value = todayISO();
+  renderParcelRows();
+  syncVisibility();
+  save();
+  calculateNow();
+  const when = payload.savedAt
+    ? " It was saved " + new Date(payload.savedAt).toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) + "."
+    : "";
+  showSaveStatus("Opened " + name + "." + when);
+}
+
+async function openFromFile() {
+  if (window.showOpenFilePicker) {
+    try {
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ description: "Bitcoin tax calculator file", accept: { "application/json": [".json"] } }],
+      });
+      const file = await handle.getFile();
+      loadFileText(await file.text(), file.name);
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+  document.getElementById("openFileInput").click();
 }
 
 async function copySummary() {
@@ -605,6 +848,51 @@ form.addEventListener("change", () => {
   calculateNow();
 });
 
+parcelRows.addEventListener("input", (event) => {
+  const input = event.target.closest("input[data-field]");
+  const row = event.target.closest("tr[data-index]");
+  if (!input || !row) return;
+  const purchase = state.purchases[Number(row.dataset.index)];
+  if (purchase) purchase[input.dataset.field] = input.value;
+  updateParcelSummary();
+});
+
+parcelRows.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove]");
+  if (!button) return;
+  state.purchases.splice(Number(button.dataset.remove), 1);
+  renderParcelRows();
+  save();
+  calculateNow();
+});
+
+document.getElementById("addPurchase").addEventListener("click", () => {
+  state.purchases.push(blankPurchase());
+  renderParcelRows();
+  save();
+  calculateNow();
+  const inputs = parcelRows.querySelectorAll('input[data-field="date"]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+});
+
+document.getElementById("clearPurchases").addEventListener("click", () => {
+  if (!state.purchases.length) return;
+  if (!confirm("Remove all " + state.purchases.length + " purchases? Save to a file first if you want to keep them.")) return;
+  state.purchases = [];
+  renderParcelRows();
+  save();
+  calculateNow();
+});
+
+document.getElementById("saveFileBtn").addEventListener("click", saveToFile);
+document.getElementById("openFileBtn").addEventListener("click", openFromFile);
+document.getElementById("openFileInput").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  loadFileText(await file.text(), file.name);
+  event.target.value = "";
+});
+
 document.getElementById("exampleBtn").addEventListener("click", loadExample);
 document.getElementById("resetBtn").addEventListener("click", resetForm);
 document.getElementById("copyBtn").addEventListener("click", copySummary);
@@ -613,6 +901,7 @@ document.getElementById("refreshPrice").addEventListener("click", fetchPrice);
 
 restore();
 if (!form.elements.disposed.value) form.elements.disposed.value = todayISO();
+renderParcelRows();
 syncVisibility();
 const savedPrice = loadSavedPrice();
 if (savedPrice) {

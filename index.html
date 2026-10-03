@@ -119,23 +119,56 @@
             <span class="choice-label">How should the profit be worked out?</span>
             <div class="segmented" role="radiogroup" aria-label="Profit method">
               <label><input type="radio" name="profitChoice" value="cost" checked> From my cost base</label>
+              <label><input type="radio" name="profitChoice" value="parcels"> From my purchases</label>
               <label><input type="radio" name="profitChoice" value="profit"> I know the capital profit</label>
             </div>
           </div>
 
-          <div id="costFields">
-            <div class="grid-2">
-              <label class="field">
-                <span>Cost base</span>
-                <span class="control money"><span class="prefix">$</span><input id="costBase" name="costBase" inputmode="decimal" placeholder="0.00"></span>
-                <small>What this bitcoin cost you in AUD, including the fee to buy it.</small>
-              </label>
-              <label class="field">
-                <span>Selling costs</span>
-                <span class="control money"><span class="prefix">$</span><input id="sellFees" name="sellFees" inputmode="decimal" placeholder="0.00"></span>
-                <small>Brokerage or exchange fees on this sale. These reduce the proceeds.</small>
-              </label>
+          <div class="grid-2" id="feeFields">
+            <label class="field" id="costBaseWrap">
+              <span>Cost base</span>
+              <span class="control money"><span class="prefix">$</span><input id="costBase" name="costBase" inputmode="decimal" placeholder="0.00"></span>
+              <small>What this bitcoin cost you in AUD, including the fee to buy it.</small>
+            </label>
+            <label class="field">
+              <span>Selling costs</span>
+              <span class="control money"><span class="prefix">$</span><input id="sellFees" name="sellFees" inputmode="decimal" placeholder="0.00"></span>
+              <small>Brokerage or exchange fees on this sale. These reduce the proceeds.</small>
+            </label>
+          </div>
+
+          <div id="parcelFields" class="parcels" hidden>
+            <p class="hint">List every time you bought bitcoin, this year and in earlier years. Include the fee you paid to buy it in the AUD cost. If you have already sold some bitcoin from a purchase, enter that under <strong>Already sold</strong>.</p>
+            <label class="field">
+              <span>Which bitcoin is being sold?</span>
+              <select class="control" id="method" name="method">
+                <option value="fifo" selected>First in, first out (oldest purchases first)</option>
+                <option value="hifo">Highest cost first (usually the lowest gain)</option>
+                <option value="lifo">Last in, first out (newest purchases first)</option>
+              </select>
+              <small>The ATO lets you choose which bitcoin you sell, if your records identify it. First in, first out is the usual choice when they do not. Use the same choice each time and keep your records. The ATO does not accept an average cost for crypto.</small>
+            </label>
+            <div class="parcel-table-wrap">
+              <table class="parcel-table">
+                <thead>
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Date bought</th>
+                    <th scope="col" title="Bitcoin bought">BTC bought</th>
+                    <th scope="col" title="Total cost in AUD, including fees">Cost (AUD)</th>
+                    <th scope="col" title="Bitcoin already sold from this purchase">Already sold</th>
+                    <th scope="col">Note</th>
+                    <th scope="col"><span class="sr-only">Remove</span></th>
+                  </tr>
+                </thead>
+                <tbody id="parcelRows"></tbody>
+              </table>
             </div>
+            <div class="parcel-actions">
+              <button type="button" id="addPurchase" class="primary">Add purchase</button>
+              <button type="button" id="clearPurchases" class="ghost">Remove all purchases</button>
+            </div>
+            <p class="readout" id="parcelSummary"></p>
           </div>
 
           <div id="profitFields" hidden>
@@ -149,14 +182,15 @@
 
         <section class="card">
           <h2>Length of time held</h2>
-          <div class="segmented" role="radiogroup" aria-label="Length of time held">
+          <div class="segmented" role="radiogroup" aria-label="Length of time held" id="holdingChoice">
             <label><input type="radio" name="holding" value="under12" checked> Under 12 months</label>
             <label><input type="radio" name="holding" value="over12"> 12 months or more</label>
             <label><input type="radio" name="holding" value="dates"> Use the dates</label>
           </div>
+          <p class="hint" id="parcelHoldingHint" hidden>Each purchase is checked against the sale date, using the date it was bought. Only the bitcoin held for 12 months or more gets the 50% discount.</p>
           <p class="hint">Australian residents can discount the gain by 50% after at least 12 months. The ATO excludes both the day you bought it and the day you sell it, so the discount starts the day after the anniversary.</p>
           <div class="grid-2">
-            <label class="field">
+            <label class="field" id="acquiredWrap">
               <span>Acquired</span>
               <input class="control" type="date" id="acquired" name="acquired">
             </label>
@@ -214,6 +248,17 @@
               <small>Reportable fringe benefits, reportable super, and exempt foreign employment income.</small>
             </label>
           </div>
+        </section>
+
+        <section class="card save-card no-print">
+          <h2>Save your figures</h2>
+          <p class="hint">Save everything on this page, including all your purchases, to a file on this PC. Open it later to carry on where you left off. Your entries are also kept in this browser between visits.</p>
+          <div class="text-actions">
+            <button type="button" id="saveFileBtn" class="primary">Save to file</button>
+            <button type="button" id="openFileBtn">Open saved file</button>
+            <input type="file" id="openFileInput" accept=".json,application/json" hidden>
+          </div>
+          <p class="readout" id="saveStatus"></p>
         </section>
 
         <div class="text-actions no-print">

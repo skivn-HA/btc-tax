@@ -384,11 +384,179 @@ function resolveHolding(input, forceDiscount) {
   return { applies, rate: applies ? 0.5 : 0, label, dates, warnings, info };
 }
 
+function formatBtcPlain(amount) {
+  return (Math.round(amount * 1e8) / 1e8).toLocaleString("en-AU", { maximumFractionDigits: 8 }) + " BTC";
+}
+
+function todayLocal() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+const METHOD_LABELS = {
+  fifo: "First in, first out",
+  lifo: "Last in, first out",
+  hifo: "Highest cost first",
+};
+
+function allocateParcels(input, forceDiscount) {
+  const saleDate = parseISODate(input.disposed) || todayLocal();
+  const warnings = [];
+  const notes = [];
+  const undated = [];
+  const future = [];
+  const overSold = [];
+  const available = [];
+
+  input.purchases.forEach((row, i) => {
+    if (!(row.btc > 0)) return;
+    const date = parseISODate(row.date);
+    if (!date) {
+      undated.push(i + 1);
+      return;
+    }
+    if (date.getTime() > saleDate.getTime()) {
+      future.push(i + 1);
+      return;
+    }
+    const boughtSats = Math.round(row.btc * 1e8);
+    const soldSats = Math.min(boughtSats, Math.round(row.sold * 1e8));
+    if (Math.round(row.sold * 1e8) > boughtSats) overSold.push(i + 1);
+    const remainingSats = boughtSats - soldSats;
+    if (remainingSats <= 0) return;
+    available.push({
+      row: i + 1,
+      date,
+      dateISO: row.date,
+      note: row.note,
+      boughtSats,
+      remainingSats,
+      cost: row.cost,
+      unitCost: row.cost / row.btc,
+    });
+  });
+
+  const list = (rows) => (rows.length === 1 ? "Purchase " + rows[0] : "Purchases " + rows.join(", "));
+  if (undated.length) warnings.push(list(undated) + " ha" + (undated.length === 1 ? "s" : "ve") + " no date, so " + (undated.length === 1 ? "it is" : "they are") + " left out. Each purchase needs a date for the 12-month test.");
+  if (future.length) notes.push(list(future) + " " + (future.length === 1 ? "is" : "are") + " dated after the sale date, so " + (future.length === 1 ? "it is" : "they are") + " left out.");
+  if (overSold.length) warnings.push(list(overSold) + " show" + (overSold.length === 1 ? "s" : "") + " more already sold than was bought.");
+
+  const order = available.slice();
+  if (input.method === "lifo") order.sort((a, b) => b.date - a.date || b.row - a.row);
+  else if (input.method === "hifo") order.sort((a, b) => b.unitCost - a.unitCost || a.date - b.date || a.row - b.row);
+  else order.sort((a, b) => a.date - b.date || a.row - b.row);
+
+  const sellSats = Math.round(input.btc * 1e8);
+  const grossProceeds = proceedsFrom(input.btc, input.price);
+  const proceeds = money(grossProceeds - input.sellFees);
+  const availableSats = available.reduce((sum, lot) => sum + lot.remainingSats, 0);
+
+  const lots = [];
+  let leftSats = sellSats;
+  let proceedsLeft = proceeds;
+  for (const lot of order) {
+    if (leftSats <= 0) break;
+    const take = Math.min(lot.remainingSats, leftSats);
+    leftSats -= take;
+    const last = leftSats <= 0;
+    const lotProceeds = last ? proceedsLeft : money((proceeds * take) / sellSats);
+    proceedsLeft = money(proceedsLeft - lotProceeds);
+    const lotCost = money((lot.cost * take) / lot.boughtSats);
+    const status = dateStatus(lot.dateISO, formatISODate(saleDate)) || { qualifies: false, label: "Bought on the sale date" };
+    const eligible = input.resident && (forceDiscount || !!status.qualifies);
+    lots.push({
+      row: lot.row,
+      date: lot.dateISO,
+      note: lot.note,
+      btc: take / 1e8,
+      cost: lotCost,
+      proceeds: lotProceeds,
+      gain: money(lotProceeds - lotCost),
+      eligible,
+      qualifiesOnDates: !!status.qualifies,
+      heldLabel: status.label || "",
+      discountFromPretty: status.discountFromPretty || "",
+      discountFrom: status.discountFrom || null,
+    });
+  }
+
+  if (leftSats > 0) {
+    const missing = leftSats / 1e8;
+    const lotProceeds = proceedsLeft;
+    lots.push({
+      row: null,
+      date: "",
+      note: "",
+      btc: missing,
+      cost: 0,
+      proceeds: lotProceeds,
+      gain: lotProceeds,
+      eligible: false,
+      qualifiesOnDates: false,
+      heldLabel: "No matching purchase",
+      discountFromPretty: "",
+      discountFrom: null,
+      unmatched: true,
+    });
+    warnings.push(
+      "The purchases only cover " +
+        formatBtcPlain(availableSats / 1e8) +
+        " still held, but the sale is " +
+        formatBtcPlain(input.btc) +
+        ". The other " +
+        formatBtcPlain(missing) +
+        " is treated as having a $0 cost base and no discount. Add the missing purchases to fix this."
+    );
+  }
+
+  return {
+    lots,
+    warnings,
+    notes,
+    proceeds,
+    grossProceeds,
+    costBase: money(lots.reduce((sum, lot) => sum + lot.cost, 0)),
+    availableBtc: availableSats / 1e8,
+    hasPurchases: available.length > 0,
+    saleDateISO: formatISODate(saleDate),
+    saleDateGuessed: !parseISODate(input.disposed),
+  };
+}
+
+function settleGains(discountable, other, losses) {
+  let pool = money(losses);
+  const fromOther = money(Math.min(pool, other));
+  pool = money(pool - fromOther);
+  const fromDiscountable = money(Math.min(pool, discountable));
+  pool = money(pool - fromDiscountable);
+  const otherRemaining = money(other - fromOther);
+  const discountRemaining = money(discountable - fromDiscountable);
+  const discountAmount = money(discountRemaining * 0.5);
+  return {
+    used: money(fromOther + fromDiscountable),
+    carry: pool,
+    otherRemaining,
+    discountRemaining,
+    gainAfterLosses: money(otherRemaining + discountRemaining),
+    discountAmount,
+    net: money(otherRemaining + discountRemaining - discountAmount),
+  };
+}
+
 function normalise(raw) {
   const source = raw || {};
   const yearKey = YEARS[source.year] ? source.year : "2026-27";
   const holding = ["under12", "over12", "dates"].includes(source.holding) ? source.holding : "under12";
-  const profitMode = source.profitMode === "profit" ? "profit" : "cost";
+  const profitMode = ["profit", "parcels"].includes(source.profitMode) ? source.profitMode : "cost";
+  const purchases = (Array.isArray(source.purchases) ? source.purchases : []).map((row, index) => ({
+    index,
+    date: String((row && row.date) || ""),
+    btc: btcAmount(row && row.btc),
+    cost: audAmount(row && row.cost),
+    sold: btcAmount(row && row.sold),
+    note: String((row && row.note) || ""),
+  }));
+  const method = ["fifo", "lifo", "hifo"].includes(source.method) ? source.method : "fifo";
   const dependants = Math.max(0, Math.floor(num(source.dependants)));
   const family = !!source.family || dependants > 0;
   return {
@@ -403,6 +571,8 @@ function normalise(raw) {
     price: money(Math.max(0, num(source.priceAud))),
     sellFees: audAmount(source.sellFees),
     profitMode,
+    purchases,
+    method,
     costBase: audAmount(source.costBase),
     knownProfit: money(num(source.knownProfit)),
     capitalLosses: audAmount(source.capitalLosses),
@@ -423,17 +593,72 @@ function normalise(raw) {
 
 function compute(raw, forceDiscount) {
   const input = normalise(raw);
-  const holding = resolveHolding(input, forceDiscount);
+  const parcelsMode = input.profitMode === "parcels";
+  const holding = parcelsMode
+    ? {
+        applies: false,
+        rate: 0,
+        label: "",
+        dates: null,
+        warnings: input.resident
+          ? []
+          : [
+              "Foreign residents do not get the 50% CGT discount. Bitcoin is often outside Australian CGT for a foreign resident. This estimate still calculates the tax as if the gain is taxable in Australia.",
+            ],
+        info: [],
+      }
+    : resolveHolding(input, forceDiscount);
   const warnings = holding.warnings.slice();
   const notes = (holding.info || []).slice();
 
   let proceeds = 0;
   let costBase = input.costBase;
   let grossGain = 0;
-  const needsBitcoin = input.profitMode === "cost" && !(input.btc > 0);
-  const needsPrice = input.profitMode === "cost" && input.btc > 0 && !(input.price > 0);
+  let discountable = 0;
+  let other = 0;
+  let parcelLosses = 0;
+  let parcels = null;
+  let waitUntilPretty = "";
+  const needsBitcoin = input.profitMode !== "profit" && !(input.btc > 0);
+  const needsPrice = input.profitMode !== "profit" && input.btc > 0 && !(input.price > 0);
+  let needsPurchases = false;
 
-  if (input.profitMode === "profit") {
+  if (parcelsMode) {
+    if (!needsBitcoin && !needsPrice) {
+      parcels = allocateParcels(input, forceDiscount);
+      if (!parcels.hasPurchases) {
+        needsPurchases = true;
+        parcels = null;
+      } else {
+        warnings.push(...parcels.warnings);
+        notes.push(...parcels.notes);
+        proceeds = parcels.proceeds;
+        costBase = parcels.costBase;
+        let latestWait = null;
+        for (const lot of parcels.lots) {
+          if (lot.gain > 0) {
+            if (lot.eligible) discountable = money(discountable + lot.gain);
+            else other = money(other + lot.gain);
+            if (!lot.eligible && lot.discountFrom && (!latestWait || lot.discountFrom > latestWait)) {
+              latestWait = lot.discountFrom;
+            }
+          } else if (lot.gain < 0) {
+            parcelLosses = money(parcelLosses - lot.gain);
+          }
+        }
+        if (latestWait) waitUntilPretty = formatPretty(latestWait);
+        grossGain = money(discountable + other - parcelLosses);
+        if (input.sellFees > parcels.grossProceeds) {
+          warnings.push("Selling costs are higher than the bitcoin sale proceeds. Check the fee.");
+        }
+        if (parcels.saleDateGuessed && !forceDiscount) {
+          notes.push("No sale date is entered, so today is used for each purchase’s 12-month test.");
+        }
+      }
+    } else if (needsBitcoin && !input.purchases.some((row) => row.btc > 0)) {
+      needsPurchases = true;
+    }
+  } else if (input.profitMode === "profit") {
     grossGain = input.knownProfit;
     if (input.btc > 0 && input.price > 0) {
       proceeds = proceedsFrom(input.btc, input.price);
@@ -459,22 +684,39 @@ function compute(raw, forceDiscount) {
     warnings.push("There is no AUD price yet. Wait for the live price, or enter your own.");
   }
 
-  let lossPool = input.capitalLosses;
-  let gainAfterLosses = money(Math.max(0, grossGain));
-  let lossesUsed = 0;
-  if (grossGain >= 0) {
-    lossesUsed = money(Math.min(lossPool, gainAfterLosses));
-    gainAfterLosses = money(gainAfterLosses - lossesUsed);
-    lossPool = money(lossPool - lossesUsed);
-  } else {
-    lossPool = money(lossPool + Math.abs(grossGain));
-    gainAfterLosses = 0;
+  if (!parcelsMode) {
+    if (grossGain > 0) {
+      if (holding.applies) discountable = grossGain;
+      else other = grossGain;
+    } else if (grossGain < 0) {
+      parcelLosses = Math.abs(grossGain);
+    }
+    if (holding.dates && !holding.dates.invalid && !holding.dates.qualifies) {
+      waitUntilPretty = holding.dates.discountFromPretty;
+    }
   }
 
-  const discountApplies = holding.applies && gainAfterLosses > 0;
-  const discountAmount = discountApplies ? money(gainAfterLosses * holding.rate) : 0;
-  const netCapitalGain = money(gainAfterLosses - discountAmount);
-  const lossCarryForward = lossPool;
+  const settled = settleGains(discountable, other, money(parcelLosses + input.capitalLosses));
+  const lossesUsed = money(Math.max(0, settled.used - parcelLosses));
+  const gainAfterLosses = settled.gainAfterLosses;
+  const discountAmount = settled.discountAmount;
+  const discountApplies = discountAmount > 0;
+  const netCapitalGain = settled.net;
+  const lossCarryForward = settled.carry;
+  const partialDiscount = discountApplies && settled.otherRemaining > 0;
+
+  let holdingLabel = holding.label;
+  if (parcels) {
+    const over = parcels.lots.filter((lot) => lot.qualifiesOnDates).reduce((sum, lot) => sum + lot.btc, 0);
+    const under = parcels.lots.filter((lot) => !lot.qualifiesOnDates).reduce((sum, lot) => sum + lot.btc, 0);
+    if (over > 0 && under > 0) {
+      holdingLabel = formatBtcPlain(over) + " for 12 months or more, " + formatBtcPlain(under) + " for less";
+    } else if (over > 0) {
+      holdingLabel = "All 12 months or more";
+    } else {
+      holdingLabel = "All under 12 months";
+    }
+  }
 
   const ordinary = money(input.paye + input.otherIncome);
   const baseTaxable = money(Math.max(0, ordinary - input.deductions));
@@ -522,7 +764,9 @@ function compute(raw, forceDiscount) {
     notes.push(
       "Capital losses of " +
         formatAUD(lossesUsed) +
-        " were taken off the gain before the CGT discount. That is the order the ATO uses."
+        " were taken off the gain before the CGT discount" +
+        (discountable > 0 && other > 0 ? ", starting with the part that gets no discount, which saves the most tax" : "") +
+        ". That is the order the ATO uses."
     );
   }
   if (input.hasHelp && input.helpBalance <= 0 && (base.help > 0 || next.help > 0) && !forceDiscount) {
@@ -574,7 +818,9 @@ function compute(raw, forceDiscount) {
   }
 
   let story;
-  if (needsBitcoin) {
+  if (needsPurchases) {
+    story = "Add your bitcoin purchases, and how much bitcoin you are selling, to work out the cost base.";
+  } else if (needsBitcoin) {
     story = "Enter how much bitcoin you are selling. Your salary is already included in the year totals below.";
   } else if (needsPrice) {
     story = "A sale price in AUD is needed before the profit and tax can be worked out.";
@@ -592,6 +838,13 @@ function compute(raw, forceDiscount) {
       "Profit that is taxable is " +
       formatAUD(netCapitalGain) +
       ". It does not increase your tax on these figures, because of the tax-free threshold or the low income tax offset.";
+  } else if (partialDiscount) {
+    story =
+      "Profit that is taxable is " +
+      formatAUD(netCapitalGain) +
+      ". The 50% discount applies only to the bitcoin held for 12 months or more. The extra tax on this sale is " +
+      formatAUD(extra.tax) +
+      ".";
   } else if (discountApplies) {
     story =
       "Profit that is taxable is " +
@@ -622,12 +875,20 @@ function compute(raw, forceDiscount) {
     resident: input.resident,
     provisional: input.year.provisional,
     profitMode: input.profitMode,
-    needsBitcoin,
+    needsBitcoin: needsBitcoin || needsPurchases,
     needsPrice,
+    needsPurchases,
     btc: input.btc,
     price: input.price,
     proceeds,
-    sellFees: input.profitMode === "cost" ? input.sellFees : 0,
+    sellFees: input.profitMode !== "profit" ? input.sellFees : 0,
+    lots: parcels ? parcels.lots : [],
+    method: input.method,
+    methodLabel: METHOD_LABELS[input.method],
+    availableBtc: parcels ? parcels.availableBtc : 0,
+    partialDiscount,
+    otherRemaining: settled.otherRemaining,
+    waitUntilPretty,
     costBase,
     grossGain,
     lossesUsed,
@@ -637,7 +898,7 @@ function compute(raw, forceDiscount) {
     discountAmount,
     netCapitalGain,
     lossCarryForward,
-    holdingLabel: holding.label,
+    holdingLabel,
     dates: holding.dates,
     base,
     next,
@@ -664,7 +925,7 @@ function compute(raw, forceDiscount) {
 
 function calculate(raw) {
   const result = compute(raw, false);
-  if (result.resident && !result.discountApplies && result.gainAfterLosses > 0 && !result.needsBitcoin && !result.needsPrice) {
+  if (result.resident && result.otherRemaining > 0 && !result.needsBitcoin && !result.needsPrice) {
     const alternate = compute(raw, true);
     result.discountSaving = money(result.extra.tax - alternate.extra.tax);
     result.discountSavingHelp = money(result.extra.help - alternate.extra.help);
@@ -741,7 +1002,7 @@ function describeYear(yearKey, resident) {
   return { key, label: year.label, lines, notes, provisional: year.provisional };
 }
 
-const BtcTax = { calculate, describeYear, formatAUD, money, YEARS };
+const BtcTax = { calculate, describeYear, formatAUD, money, YEARS, METHOD_LABELS };
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = BtcTax;
