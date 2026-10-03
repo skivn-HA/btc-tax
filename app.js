@@ -19,6 +19,7 @@ const parcelRows = document.getElementById("parcelRows");
 const parcelSummary = document.getElementById("parcelSummary");
 const saveStatus = document.getElementById("saveStatus");
 const FILE_APP = "au-btc-tax-calculator";
+const android = window.AndroidBridge || null;
 
 const state = {
   price: null,
@@ -83,12 +84,12 @@ function renderParcelRows() {
   } else {
     parcelRows.innerHTML = state.purchases.map((row, i) => `<tr data-index="${i}">
       <td class="num">${i + 1}</td>
-      <td><input type="date" data-field="date" value="${esc(row.date)}" aria-label="Purchase ${i + 1} date bought"></td>
-      <td><input data-field="btc" inputmode="decimal" placeholder="0.00" value="${esc(withCommas(row.btc))}" aria-label="Purchase ${i + 1} bitcoin bought"></td>
-      <td><input data-field="cost" inputmode="decimal" placeholder="$0.00" value="${esc(withCommas(row.cost))}" aria-label="Purchase ${i + 1} total cost in AUD"></td>
-      <td><input data-field="sold" inputmode="decimal" placeholder="0" value="${esc(withCommas(row.sold))}" aria-label="Purchase ${i + 1} bitcoin already sold"></td>
-      <td><input data-field="note" maxlength="60" placeholder="Exchange" value="${esc(row.note)}" aria-label="Purchase ${i + 1} note"></td>
-      <td><button type="button" class="remove" data-remove="${i}" aria-label="Remove purchase ${i + 1}" title="Remove">×</button></td>
+      <td class="date-cell" data-label="Date bought"><input type="date" data-field="date" value="${esc(row.date)}" aria-label="Purchase ${i + 1} date bought"></td>
+      <td data-label="BTC bought"><input data-field="btc" inputmode="decimal" placeholder="0.00" value="${esc(withCommas(row.btc))}" aria-label="Purchase ${i + 1} bitcoin bought"></td>
+      <td data-label="Cost (AUD)"><input data-field="cost" inputmode="decimal" placeholder="$0.00" value="${esc(withCommas(row.cost))}" aria-label="Purchase ${i + 1} total cost in AUD"></td>
+      <td data-label="Already sold"><input data-field="sold" inputmode="decimal" placeholder="0" value="${esc(withCommas(row.sold))}" aria-label="Purchase ${i + 1} bitcoin already sold"></td>
+      <td data-label="Note"><input data-field="note" maxlength="60" placeholder="Exchange" value="${esc(row.note)}" aria-label="Purchase ${i + 1} note"></td>
+      <td class="remove-cell"><button type="button" class="remove" data-remove="${i}" aria-label="Remove purchase ${i + 1}" title="Remove">×</button></td>
     </tr>`).join("");
   }
   updateParcelSummary();
@@ -673,6 +674,10 @@ async function saveToFile() {
   };
   const text = JSON.stringify(payload, null, 2);
   const suggestedName = fileName();
+  if (android) {
+    android.saveFile(suggestedName, text);
+    return;
+  }
   if (window.showSaveFilePicker) {
     try {
       const handle = await window.showSaveFilePicker({
@@ -748,7 +753,8 @@ async function copySummary() {
   const text = summaryText(current.input, current.result);
   const button = document.getElementById("copyBtn");
   try {
-    await navigator.clipboard.writeText(text);
+    if (android) android.copyText(text);
+    else await navigator.clipboard.writeText(text);
     button.textContent = "Copied";
   } catch (error) {
     button.textContent = "Copy failed";
@@ -850,6 +856,16 @@ async function fetchPrice() {
 }
 
 function registerApp() {
+  if (android) {
+    document.documentElement.classList.add("android");
+    document.getElementById("saveHint").textContent =
+      "Save everything on this page, including all your purchases, to a file on this phone. Open it later to carry on where you left off. Your entries are also kept in the app between visits.";
+    window.onAndroidFileSaved = (status, name) => {
+      if (status === "ok") showSaveStatus("Saved as " + name + ".");
+      else if (status === "error") showSaveStatus("The file could not be saved.");
+    };
+    return;
+  }
   if (location.protocol === "file:") {
     fileBanner.hidden = false;
     return;
@@ -937,7 +953,10 @@ document.getElementById("openFileInput").addEventListener("change", async (event
 document.getElementById("exampleBtn").addEventListener("click", loadExample);
 document.getElementById("resetBtn").addEventListener("click", resetForm);
 document.getElementById("copyBtn").addEventListener("click", copySummary);
-document.getElementById("printBtn").addEventListener("click", () => window.print());
+document.getElementById("printBtn").addEventListener("click", () => {
+  if (android) android.print();
+  else window.print();
+});
 document.getElementById("refreshPrice").addEventListener("click", fetchPrice);
 
 restore();

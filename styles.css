@@ -424,7 +424,8 @@ h3 { margin: 22px 0 8px; font-size: 15px; }
 .fine { margin-top: 8px; }
 
 @media (max-width: 980px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .layout > *, .card, fieldset { min-width: 0; }
   .results { position: static; max-height: none; }
   .ticker { grid-template-columns: 1fr; }
   .ticker-label { grid-row: auto; }
@@ -439,6 +440,32 @@ h3 { margin: 22px 0 8px; font-size: 15px; }
   .span-2 { grid-column: auto; }
   h1 { font-size: 28px; }
   .hero-amount { font-size: 40px; }
+
+  .parcel-table, .parcel-table tbody { display: block; min-width: 0; }
+  .parcel-table thead { display: none; }
+  .parcel-table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 12px;
+    position: relative;
+    padding: 12px 0 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .parcel-table tr.empty { display: block; }
+  .parcel-table td { display: block; padding: 0; border: 0; }
+  .parcel-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 5px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+  }
+  .parcel-table td.num { grid-column: 1 / -1; width: auto; color: inherit; font-weight: 650; font-size: 14px; }
+  .parcel-table td.num::before { content: "Purchase "; }
+  .parcel-table td.date-cell { grid-column: 1 / -1; }
+  .parcel-table td.remove-cell { position: absolute; top: 6px; right: 0; }
+  .parcel-table input, .parcel-table input[type="date"] { min-height: 44px; font-size: 15px; padding: 0 10px; }
 }
 
 @media print {
