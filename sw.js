@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "btc-tax-v4";
+const CACHE = "btc-tax-v5";
 const ASSETS = [
   "./index.html",
   "./styles.css",

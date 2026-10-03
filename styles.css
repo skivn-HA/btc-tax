@@ -231,6 +231,11 @@ select.control {
 
 .text-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 18px; }
 .save-card .text-actions { margin-bottom: 8px; }
+.text-actions button.primary {
+  background: var(--orange);
+  color: var(--orange-ink);
+  border-color: transparent;
+}
 
 .sr-only {
   position: absolute;
