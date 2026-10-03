@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0c0e12">
+  <meta name="description" content="Estimate Australian tax on bitcoin you sell, using your income, how long you held it, and the bitcoin price in AUD.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="BTC Tax">
+  <title>Australian Bitcoin Tax Calculator</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="mast">
+      <div class="brand">
+        <div class="btc-badge" aria-hidden="true">₿</div>
+        <div>
+          <p class="eyebrow">Australia</p>
+          <h1>Bitcoin Tax Calculator</h1>
+          <p class="lede">Estimate the tax on bitcoin you sell. It uses your income, how long you held the coins, the profit on the sale, and the current bitcoin price in Australian dollars.</p>
+        </div>
+      </div>
+      <div class="mast-actions no-print">
+        <button type="button" id="installBtn" class="primary" hidden>Install app</button>
+      </div>
+    </header>
+
+    <section class="ticker" aria-label="Bitcoin price in Australian dollars">
+      <p class="ticker-label">Bitcoin<br>AUD</p>
+      <p class="ticker-price" id="priceValue">—</p>
+      <div class="ticker-side">
+        <span class="change" id="priceChange" hidden></span>
+        <button type="button" class="icon-button no-print" id="refreshPrice">Refresh price</button>
+      </div>
+      <p class="ticker-meta" id="priceMeta">Fetching the bitcoin price in AUD…</p>
+    </section>
+
+    <div id="fileBanner" class="banner no-print" hidden>
+      This file is open directly from the folder. The calculator still runs. To install it, double-click <strong>Start.bat</strong> in this folder, then use Install app in Chrome or Edge.
+    </div>
+
+    <details class="install-help no-print">
+      <summary>Install on this PC</summary>
+      <ol>
+        <li>Open the calculator from its website, or on this PC by double-clicking <strong>Start.bat</strong>.</li>
+        <li>In Chrome or Edge, click the install icon at the right of the address bar, or <strong>Install app</strong> above. You can also open the browser menu and choose Apps, then install Australian Bitcoin Tax Calculator.</li>
+        <li>It then opens in its own window. The price needs an internet connection. After one successful load, the calculator itself keeps working offline.</li>
+      </ol>
+    </details>
+
+    <main class="layout">
+      <form id="calc" class="form-column" autocomplete="off">
+        <section class="card">
+          <h2>You and your income</h2>
+          <label class="field">
+            <span>Name</span>
+            <span class="control"><input id="name" name="name" maxlength="80" autocomplete="name" placeholder="Optional"></span>
+          </label>
+          <div class="grid-2">
+            <label class="field">
+              <span>Financial year</span>
+              <select class="control" id="year" name="year">
+                <option value="2026-27" selected>2026–27 (current)</option>
+                <option value="2025-26">2025–26</option>
+                <option value="2027-28">2027–28 (legislated rates)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Residency</span>
+              <select class="control" id="residency" name="residency">
+                <option value="resident" selected>Australian resident</option>
+                <option value="foreign">Foreign resident</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>PAYE income</span>
+            <span class="control money"><span class="prefix">$</span><input id="paye" name="paye" inputmode="decimal" placeholder="0"></span>
+            <small>Salary and wages for this financial year, before tax. A sale today is in 2026–27, which runs from 1 July 2026 to 30 June 2027.</small>
+          </label>
+          <div class="grid-2">
+            <label class="field">
+              <span>Other taxable income</span>
+              <span class="control money"><span class="prefix">$</span><input id="otherIncome" name="otherIncome" inputmode="decimal" placeholder="0"></span>
+              <small>Interest, dividends, rent, or other ordinary income.</small>
+            </label>
+            <label class="field">
+              <span>Deductions</span>
+              <span class="control money"><span class="prefix">$</span><input id="deductions" name="deductions" inputmode="decimal" placeholder="0"></span>
+              <small>Work-related and other deductions. These can also offset the gain.</small>
+            </label>
+          </div>
+          <label class="field">
+            <span>Tax already withheld from salary</span>
+            <span class="control money"><span class="prefix">$</span><input id="withheld" name="withheld" inputmode="decimal" placeholder="Optional"></span>
+            <small>Optional. Used to estimate the bill or refund when you lodge, after this sale.</small>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>Bitcoin being sold</h2>
+          <div class="grid-2">
+            <label class="field">
+              <span>Bitcoin being sold</span>
+              <span class="control"><input id="btc" name="btc" inputmode="decimal" placeholder="0.00"><span class="suffix">BTC</span></span>
+            </label>
+            <div class="field">
+              <span class="choice-label">Sale price</span>
+              <div class="segmented" role="radiogroup" aria-label="Sale price">
+                <label><input type="radio" name="priceChoice" value="live" checked> <span id="livePriceChoice">Live market price</span></label>
+                <label><input type="radio" name="priceChoice" value="custom"> My own AUD price</label>
+              </div>
+            </div>
+          </div>
+          <p class="readout" id="salePreview"></p>
+          <label class="field" id="customPriceWrap" hidden>
+            <span>Your AUD price per bitcoin</span>
+            <span class="control money"><span class="prefix">$</span><input id="customPrice" name="customPrice" inputmode="decimal" placeholder="0.00"></span>
+            <small>Use this for a past sale, or when you know the price you will receive. The ATO expects each disposal to be valued in Australian dollars.</small>
+          </label>
+
+          <div class="field">
+            <span class="choice-label">How should the profit be worked out?</span>
+            <div class="segmented" role="radiogroup" aria-label="Profit method">
+              <label><input type="radio" name="profitChoice" value="cost" checked> From my cost base</label>
+              <label><input type="radio" name="profitChoice" value="profit"> I know the capital profit</label>
+            </div>
+          </div>
+
+          <div id="costFields">
+            <div class="grid-2">
+              <label class="field">
+                <span>Cost base</span>
+                <span class="control money"><span class="prefix">$</span><input id="costBase" name="costBase" inputmode="decimal" placeholder="0.00"></span>
+                <small>What this bitcoin cost you in AUD, including the fee to buy it.</small>
+              </label>
+              <label class="field">
+                <span>Selling costs</span>
+                <span class="control money"><span class="prefix">$</span><input id="sellFees" name="sellFees" inputmode="decimal" placeholder="0.00"></span>
+                <small>Brokerage or exchange fees on this sale. These reduce the proceeds.</small>
+              </label>
+            </div>
+          </div>
+
+          <div id="profitFields" hidden>
+            <label class="field">
+              <span>Capital profit</span>
+              <span class="control money"><span class="prefix">$</span><input id="knownProfit" name="knownProfit" inputmode="decimal" placeholder="0.00"></span>
+              <small>Sale proceeds minus the cost base, before the 12-month discount. A negative number is a capital loss. If you held it for 12 months or more, only half of a gain is the profit that is taxable.</small>
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Length of time held</h2>
+          <div class="segmented" role="radiogroup" aria-label="Length of time held">
+            <label><input type="radio" name="holding" value="under12" checked> Under 12 months</label>
+            <label><input type="radio" name="holding" value="over12"> 12 months or more</label>
+            <label><input type="radio" name="holding" value="dates"> Use the dates</label>
+          </div>
+          <p class="hint">Australian residents can discount the gain by 50% after at least 12 months. The ATO excludes both the day you bought it and the day you sell it, so the discount starts the day after the anniversary.</p>
+          <div class="grid-2">
+            <label class="field">
+              <span>Acquired</span>
+              <input class="control" type="date" id="acquired" name="acquired">
+            </label>
+            <label class="field">
+              <span>Sold</span>
+              <input class="control" type="date" id="disposed" name="disposed">
+            </label>
+          </div>
+          <p class="readout" id="holdingReadout"></p>
+          <label class="field">
+            <span>Capital losses to apply</span>
+            <span class="control money"><span class="prefix">$</span><input id="capitalLosses" name="capitalLosses" inputmode="decimal" placeholder="0"></span>
+            <small>Earlier capital losses, and other capital losses this year. They reduce this gain before the discount. They cannot reduce your salary.</small>
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>Medicare and study loan</h2>
+          <label class="check">
+            <input type="checkbox" id="privateHospital" name="privateHospital" checked>
+            <span>I have private hospital cover for the whole year. <small>Without it, the Medicare levy surcharge can apply once income passes the threshold.</small></span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="medicareExempt" name="medicareExempt">
+            <span>I am exempt from the Medicare levy.</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="family" name="family">
+            <span>I have a spouse or dependent children. <small>This changes the Medicare levy surcharge thresholds. The family levy reduction itself is not calculated.</small></span>
+          </label>
+          <div class="grid-2" id="familyFields" hidden>
+            <label class="field">
+              <span>Spouse’s taxable income</span>
+              <span class="control money"><span class="prefix">$</span><input id="spouseIncome" name="spouseIncome" inputmode="decimal" placeholder="0"></span>
+            </label>
+            <label class="field">
+              <span>Dependent children</span>
+              <span class="control"><input id="dependants" name="dependants" inputmode="numeric" placeholder="0"></span>
+              <small>The family threshold rises by $1,500 for each child after the first.</small>
+            </label>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="hasHelp" name="hasHelp">
+            <span>I have a study or training loan (HELP, VSL, or similar).</span>
+          </label>
+          <div class="grid-2" id="helpFields" hidden>
+            <label class="field">
+              <span>Loan balance</span>
+              <span class="control money"><span class="prefix">$</span><input id="helpBalance" name="helpBalance" inputmode="decimal" placeholder="0"></span>
+              <small>The compulsory repayment will not go past this balance.</small>
+            </label>
+            <label class="field">
+              <span>Extra repayment income</span>
+              <span class="control money"><span class="prefix">$</span><input id="helpExtra" name="helpExtra" inputmode="decimal" placeholder="0"></span>
+              <small>Reportable fringe benefits, reportable super, and exempt foreign employment income.</small>
+            </label>
+          </div>
+        </section>
+
+        <div class="text-actions no-print">
+          <button type="button" id="exampleBtn">Load example</button>
+          <button type="button" id="resetBtn">Clear</button>
+        </div>
+
+        <details class="card fold" id="rates">
+          <summary>Rates and rules used</summary>
+          <div id="ratesBody"></div>
+        </details>
+      </form>
+
+      <section class="results" id="resultsCard" aria-live="polite">
+        <div class="results-toolbar no-print">
+          <button type="button" id="copyBtn">Copy summary</button>
+          <button type="button" id="printBtn">Print</button>
+        </div>
+        <div id="results"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>An estimate for an individual, using ATO rates current as at October 2026. It is not tax advice, and it does not send anything to the ATO.</p>
+      <details class="fold">
+        <summary>What this estimate leaves out</summary>
+        <ul>
+          <li>Companies, trusts, and super funds. Those taxpayers do not all get the 50% discount.</li>
+          <li>The seniors and pensioners tax offset, and the Medicare levy reduction for families.</li>
+          <li>The full income tests for the Medicare levy surcharge. Taxable income is used, plus a spouse’s income when you enter one.</li>
+          <li>Any reduction of the CGT discount for periods you were a foreign resident.</li>
+          <li>The price at the exact time of a past trade, unless you type that AUD price yourself.</li>
+        </ul>
+      </details>
+      <p class="fine">
+        <a href="https://www.ato.gov.au/individuals-and-families/investments-and-assets/crypto-asset-investments" target="_blank" rel="noopener">ATO: crypto asset investments</a>
+        ·
+        <a href="https://www.ato.gov.au/tax-rates-and-codes/tax-rates-australian-residents" target="_blank" rel="noopener">Resident tax rates</a>
+        ·
+        <a href="https://www.ato.gov.au/individuals-and-families/investments-and-assets/capital-gains-tax/cgt-discount" target="_blank" rel="noopener">CGT discount</a>
+      </p>
+    </footer>
+  </div>
+  <noscript>This calculator needs JavaScript.</noscript>
+  <script src="tax.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
