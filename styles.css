@@ -401,6 +401,7 @@ select.control {
 .callout { background: rgba(61, 214, 140, 0.08); border: 1px solid rgba(61, 214, 140, 0.32); }
 
 h3 { margin: 22px 0 8px; font-size: 15px; }
+.results h3.section-heading { color: var(--yellow); }
 .cmp { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; }
 .cmp th, .cmp td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: bottom; }
 .cmp th { text-align: left; font-weight: 650; }

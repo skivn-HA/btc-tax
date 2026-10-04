@@ -301,7 +301,7 @@ function renderSale(result) {
   add("CGT discount", discountText);
   add("Profit that is taxable", esc(BtcTax.formatAUD(result.netCapitalGain)), true);
   if (result.lossCarryForward > 0) add("Loss still to carry forward", esc(BtcTax.formatAUD(result.lossCarryForward)));
-  return `<h3>How the profit is taxed</h3><dl class="breakdown">${rows.join("")}</dl>`;
+  return `<h3 class="section-heading">How the profit is taxed</h3><dl class="breakdown">${rows.join("")}</dl>`;
 }
 
 function prettyDate(iso) {
@@ -331,7 +331,7 @@ function renderLots(result) {
       <td>${esc(BtcTax.formatAUD(lot.gain))}</td>
     </tr>`;
   }).join("");
-  return `<h3>Purchases used for this sale</h3>
+  return `<h3 class="section-heading">Purchases used for this sale</h3>
     <table class="lots">
       <thead><tr><th>Purchase</th><th>Bitcoin</th><th>Cost base</th><th>Proceeds</th><th>Gain</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -368,7 +368,7 @@ function renderTable(result) {
     <td>${esc(moneyCell(after))}</td>
     <td class="diff">${esc(moneyCell(diff))}</td>
   </tr>`).join("");
-  return `<h3>Tax for the whole year</h3>
+  return `<h3 class="section-heading">Tax for the whole year</h3>
     <table class="cmp">
       <thead><tr><th></th><th>Before this sale</th><th>After this sale</th><th>From this sale</th></tr></thead>
       <tbody>${body}</tbody>
@@ -396,7 +396,7 @@ function renderSlices(result) {
     return `<i style="width:${width}%;background:${rateColor(slice.rate)}"></i>`;
   }).join("");
   const key = result.slices.map((slice) => `<li><span><i class="swatch" style="background:${rateColor(slice.rate)}"></i>${esc(formatPct(slice.rate))}</span><span>${esc(BtcTax.formatAUD(slice.amount))} · tax ${esc(BtcTax.formatAUD(slice.tax))}</span></li>`).join("");
-  return `<h3>Where the taxable profit sits</h3><div class="bar" aria-hidden="true">${bar}</div><ul class="slice-key">${key}</ul>${renderMarginal(result)}`;
+  return `<h3 class="section-heading">Where the taxable profit sits</h3><div class="bar" aria-hidden="true">${bar}</div><ul class="slice-key">${key}</ul>${renderMarginal(result)}`;
 }
 
 function renderLodgement(result) {
